@@ -1,0 +1,50 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'mural'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=mural",
+                    "--package=mural"
+                ],
+                "filter": {
+                    "name": "mural",
+                    "kind": "bin"
+                }
+            },
+            "args": ["--image", "/home/alec/projects/art/pointillist_mural_maker/resources/bee.png",
+            // A palette of yellow, black, beige, and green
+        "--palette", "#ffe600,#000000,#f5f5dc,#006400",
+        "--output", "/home/alec/projects/art/pointillist_mural_maker/output/bee.png"
+        ],
+
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'mural'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=mural",
+                    "--package=mural"
+                ],
+                "filter": {
+                    "name": "mural",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
