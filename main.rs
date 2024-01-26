@@ -1,155 +1,129 @@
 use clap::Parser;
 use image::Rgb;
 use anyhow::{ensure, Result};
-use palette::{Hsl, Srgb};
 use palette::convert::*;
-
-type Palette = Vec<Rgb<u8>>;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct Mixture<T: MixtureChannel>(Vec<T>);
-
-impl<T: MixtureChannel> Mixture<T> {
-    fn from_f64(f: Vec<f64>) -> Self {
-        Mixture(f.iter().map(|&f| T::from_f64(f)).collect())
-    }
-
-    fn as_f64(&self) -> Vec<f64> {
-        self.0.iter().map(|&mix| mix.as_f64()).collect()
-    }
-}
-
+mod colors;
 mod circular_ops;
-use circular_ops::*;
+use colors::*;
 
-pub trait MixtureChannel: Clone + Copy + PartialEq + Eq + PartialOrd + Ord + std::fmt::Debug{
-    fn as_f64(&self) -> f64;
-    fn increment(&mut self);
-    fn decrement(&mut self);
+// type Palette = Vec<Rgb<u8>>;
+
+// An interval from 0 to 1
+trait Interval {
     fn from_f64(f: f64) -> Self;
+    fn as_f64(&self) -> f64;
+    fn increment(&mut self) -> bool;
+    fn decrement(&mut self) -> bool;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct MixtureChannel100 {
+#[derive(Clone, PartialEq, Debug, Copy)]
+struct Interval100 {
     value: u8,
 }
 
-impl MixtureChannel for MixtureChannel100 {
-    fn as_f64(&self) -> f64 {
-        self.value as f64 / 100.0
-    }
-
-    fn increment(&mut self) {
-        self.value += 1;
-    }
-
-    fn decrement(&mut self) {
-        self.value -= 1;
-    }
-
+impl Interval for Interval100 {
     fn from_f64(f: f64) -> Self {
-        MixtureChannel100 {
+        Interval100 {
             value: (f * 100.0).round() as u8,
+        }
+    }
+
+    fn as_f64(&self) -> f64 {
+        self.value as f64 / 100.
+    }
+
+    fn increment(&mut self) -> bool {
+        if self.value < 100 {
+            self.value += 1;
+            true
+        } else {
+            false
+        }
+    }
+
+    fn decrement(&mut self) -> bool {
+        if self.value > 0 {
+            self.value -= 1;
+            true
+        } else {
+            false
         }
     }
 }
 
-impl Ord for MixtureChannel100 {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.value.cmp(&other.value)
+pub trait ColorMixture<const PaletteCount: usize>
+    where Self: Sized
+{
+    fn compute_color(&self) -> [f64; 3];
+    fn possible_moves(&self) -> Vec<Self>;
+}
+
+#[derive(Clone, PartialEq, Debug)]
+struct MuralColorMixture<const PaletteCount: usize> {
+    background_color: Rgb<u8>,
+    palette: [Rgb<u8>; PaletteCount],
+    mixture: [Interval100; PaletteCount],
+}
+
+impl<const PaletteCount: usize> MuralColorMixture<PaletteCount> {
+    fn new(background_color: Rgb<u8>, palette: [Rgb<u8>; PaletteCount]) -> Self {
+        MuralColorMixture {
+            background_color,
+            palette,
+            // The mixture should be an array of Interval100 of length PaletteCount, each initialized to zero
+            mixture: [Interval100::from_f64(0.); PaletteCount],
+        }
     }
 }
 
-impl PartialOrd for MixtureChannel100 {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
+impl<const PaletteCount: usize> ColorMixture<PaletteCount> for MuralColorMixture<PaletteCount> {
+    fn compute_color(&self) -> [f64; 3] {
+        let mut color = self.background_color.clone();
+        panic!("TODO");
+    }
+
+    fn possible_moves(&self) -> Vec<Self> {
+        let mut moves = Vec::new();
+        for (i, mix) in self.mixture.iter().enumerate() {
+            {
+                let mut c = self.mixture.clone();
+                if c[i].decrement() {
+                    moves.push(MuralColorMixture {
+                        background_color: self.background_color,
+                        palette: self.palette,
+                        mixture: c,
+                    });
+                }
+            }
+            {
+                let mut c = self.mixture.clone();
+                if c[i].increment() {
+                    moves.push(MuralColorMixture {
+                        background_color: self.background_color,
+                        palette: self.palette,
+                        mixture: c,
+                    });
+                }
+            }
+        }
+        moves
     }
 }
 
-impl Copy for MixtureChannel100 {}
-
-fn hex_to_rgb(hex: &str) -> Result<Rgb<u8>> {
-    ensure!(hex.len() == 7, "Hex color must be 7 characters long, including the leading #");
-    let r = u8::from_str_radix(&hex[1..3], 16)?;
-    let g = u8::from_str_radix(&hex[3..5], 16)?;
-    let b = u8::from_str_radix(&hex[5..7], 16)?;
-
-    Ok(Rgb([r, g, b]))
+struct MuralPixel<const PaletteCount: usize> {
+    target_color: Rgb<u8>,
+    mixture: MuralColorMixture<PaletteCount>
 }
 
-fn rgb_to_hex(color: &Rgb<u8>) -> String {
-    format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2])
-}
+impl<const PaletteCount: usize> MuralPixel<PaletteCount> {
+    fn new(color: Rgb<u8>, palette: [Rgb<u8>; PaletteCount]) -> Self {
+        MuralPixel {
+            target_color: color,
+            mixture: MuralColorMixture::new(color, palette),
+        }
+    }
 
-fn rgb_to_hsl(color: [f64; 3]) -> (f64, f64, f64) {
-    // Create an Srgb color from the f64 values
-    let rgb_color = Srgb::from_components((color[0] as f32, color[1] as f32, color[2] as f32));
-
-    // Convert to HSL
-    let hsl_color: Hsl = rgb_color.into_color();
-    
-    // Extract HSL values
-    (
-        (hsl_color.hue.into_positive_degrees() / 360.0) as f64,
-        hsl_color.saturation as f64,
-        hsl_color.lightness as f64
-    )
-}
-
-fn compute_color<T: MixtureChannel>(mixture: &Mixture<T>, palette: &Palette) -> Rgb<u8> {
-    // Compute the color of this pixel, given a palette of colors
-    // The color is the weighted average of the palette colors, weighted by the mixture
-    Rgb([
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * color[0] as f64).sum::<f64>() as u8,
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * color[1] as f64).sum::<f64>() as u8,
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * color[2] as f64).sum::<f64>() as u8,
-    ])
-}
-
-fn compute_color_f64<T: MixtureChannel>(mixture: &Mixture<T>, palette: &Palette) -> [f64; 3] {
-    // Compute the color of this pixel, given a palette of colors
-    // The color is the weighted average of the palette colors, weighted by the mixture
-    // Output is in f64 format: 0.0 - 1.0
-    [
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * (color[0] as f64 / 255.0)).sum::<f64>(),
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * (color[1] as f64 / 255.0)).sum::<f64>(),
-        mixture.0.iter().zip(palette.iter()).map(|(&mix, color)| mix.as_f64() * (color[2] as f64 / 255.0)).sum::<f64>(),
-    ]
-}
-
-fn score<T: MixtureChannel>(color: &Rgb<u8>, mixture: &Mixture<T>, palette: &Palette) -> f64 {
-    // Compute the score of this pixel, given a palette of colors
-    // The score is the distance between the current color and the computed color
-    let mixture_color_f64 = compute_color_f64(mixture, palette);
-    let color_f64 = [
-        color[0] as f64 / 255.0,
-        color[1] as f64 / 255.0,
-        color[2] as f64 / 255.0,
-    ];
-    //(computed_color[0] - color[0]).powi(2) + (computed_color[1] - color[1]).powi(2) + (computed_color[2] - color[2]).powi(2)
-    // Rather than just comparing RGB raw values, the score should depend primarily on the HUE
-    // To do this, convert to HSL
-    let mixture_color_f64_hsl = rgb_to_hsl(mixture_color_f64);
-    let color_f64_hsl = rgb_to_hsl(color_f64);
-    // Then, compare the hue, saturation, and lightness
-    // The hue should be the most important, then saturation, then lightness
-    // The hue should be a circular distance, so that 0.0 and 1.0 are close together
-    let hue_diff = circular_offset(mixture_color_f64_hsl.0, color_f64_hsl.0, 1.0).abs();
-    let saturation_diff = (mixture_color_f64_hsl.1 - color_f64_hsl.1).abs();
-    let lightness_diff = (mixture_color_f64_hsl.2 - color_f64_hsl.2).abs();
-    hue_diff.powi(2) + saturation_diff.powi(2) + lightness_diff.powi(2)
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct MuralPixel<T: MixtureChannel> {
-    // The color of the pixel
-    color: image::Rgb<u8>,
-    // The current mixture of palette colors, from 0.0 to 1.0
-    mixture: Mixture<T>,
-}
-
-impl<T: MixtureChannel> MuralPixel<T> {
-    fn greedily_compute_mixture(&mut self, palette: &Palette) {
+    fn greedily_compute_mixture(&mut self) {
         // Greedily compute the mixture of palette colors for this pixel
         // Given a palette of colors, c_0…c_i.
         //   Initialize this pixel to be 100% c_0.
@@ -161,24 +135,19 @@ impl<T: MixtureChannel> MuralPixel<T> {
         //   If no pixels changed, stop.
 
         loop {
-            let mut best_score = score(&self.color, &self.mixture, palette);
+            let target_color_f64 = [
+                self.target_color[0] as f64 / 255.,
+                self.target_color[1] as f64 / 255.,
+                self.target_color[2] as f64 / 255.,
+            ];
+            let mut best_score = score(&target_color_f64, &self.mixture.compute_color());
             let mut best_mixture = self.mixture.clone();
 
-            for (i, &mix) in self.mixture.0.iter().enumerate() {
-                if mix.as_f64() > 0. {
-                    // Try moving 1 step of this color to another color
-                    for j in 0..palette.len() {
-                        if i != j {
-                            let mut new_pixel_mixture = self.mixture.clone();
-                            new_pixel_mixture.0[i].decrement();
-                            new_pixel_mixture.0[j].increment();
-                            let score = score(&self.color, &new_pixel_mixture, palette);
-                            if score < best_score {
-                                best_score = score;
-                                best_mixture = new_pixel_mixture;
-                            }
-                        }
-                    }
+            for mix in self.mixture.possible_moves() {
+                let score = score(&target_color_f64, &mix.compute_color());
+                if score < best_score {
+                    best_score = score;
+                    best_mixture = mix;
                 }
             }
 
@@ -191,18 +160,17 @@ impl<T: MixtureChannel> MuralPixel<T> {
     }
 }
 
-struct Mural<T: MixtureChannel> {
-    palette: Vec<image::Rgb<u8>>,
-    pixels: ndarray::Array2<MuralPixel<T>>,
+struct Mural<const PaletteCount: usize> {
+    pixels: ndarray::Array2<MuralPixel<PaletteCount>>,
 }
 
-impl<T: MixtureChannel> Mural<T> {
+impl<const PaletteCount: usize> Mural<PaletteCount> {
     fn new(palette: Vec<image::Rgb<u8>>, image: image::RgbImage) -> Self {
         let pixels = ndarray::Array2::from_shape_fn((image.width() as usize, image.height() as usize), |(x, y)| {
             MuralPixel {
-                color: image.get_pixel(x as u32, y as u32).clone(),
+                target_color: image.get_pixel(x as u32, y as u32).clone(),
                 // Initialize each pixel's mixture to be 1.0 of the first palette color, and 0.0 of the rest
-                mixture: Mixture(palette.iter().enumerate().map(|(i, _)| if i == 0 { T::from_f64(1.0) } else { T::from_f64(0.0) }).collect()),
+                mixture: MuralColorMixture::new(image.get_pixel(x as u32, y as u32).clone(), palette.clone())
             }
         });
 
@@ -327,22 +295,22 @@ mod tests {
         assert_eq!(mural.pixels[[1, 1]].mixture.as_f64(), vec![1.0, 0.]);
     }
 
-    fn run_pixel_test<T: MixtureChannel>(color: Rgb<u8>, palette: Vec<Rgb<u8>>, expected_mixture: Mixture<T>) {
+    fn run_pixel_test<T: MixtureChannel>(color: Rgb<u8>, palette: Vec<Rgb<u8>>, expected_mixture: ColorMixture<T>) {
         let mut pixel = MuralPixel {
-            color,
-            mixture: Mixture::<T>::from_f64(vec![1., 0., 0., 0.]),
+            target_color: color,
+            mixture: ColorMixture::<T>::from_f64(vec![1., 0., 0., 0.]),
         };
         println!("===========================");
-        println!("Target color: {:?}", pixel.color);
+        println!("Target color: {:?}", pixel.target_color);
         println!("Initial mixture: {:?}", pixel.mixture);
         println!("Color of initial mixture: {:?}", compute_color_f64(&pixel.mixture, &palette));
-        println!("Score of initial mixture: {}", score(&pixel.color, &pixel.mixture, &palette));
+        println!("Score of initial mixture: {}", score(&pixel.target_color, &pixel.mixture, &palette));
         pixel.greedily_compute_mixture(&palette);
         println!("Final mixture: {:?}", pixel.mixture);
         println!("Color of final mixture: {:?}", compute_color(&pixel.mixture, &palette));
-        println!("Score of final mixture: {}", score(&pixel.color, &pixel.mixture, &palette));
+        println!("Score of final mixture: {}", score(&pixel.target_color, &pixel.mixture, &palette));
         println!("Color of expected mixture: {:?}", compute_color(&expected_mixture, &palette));
-        println!("Score of expected mixture: {}", score(&pixel.color, &expected_mixture, &palette));
+        println!("Score of expected mixture: {}", score(&pixel.target_color, &expected_mixture, &palette));
         assert!(pixel.mixture == expected_mixture);
     }
 
@@ -355,9 +323,9 @@ mod tests {
             Rgb([122, 122, 122,]),
         ];
         // Test a few possible pixel colors, individually
-        run_pixel_test(Rgb([0,0,0]), palette.clone(), Mixture::<MixtureChannel100>::from_f64(vec![1., 0., 0., 0.]));
-        run_pixel_test(Rgb([255,0,0]), palette.clone(), Mixture::<MixtureChannel100>::from_f64(vec![0., 1., 0., 0.]));
-        run_pixel_test(Rgb([0,255,0]), palette.clone(), Mixture::<MixtureChannel100>::from_f64(vec![0., 0., 1., 0.]));
-        run_pixel_test(Rgb([122,122,122]), palette.clone(), Mixture::<MixtureChannel100>::from_f64(vec![0., 0., 0., 1.]));
+        run_pixel_test(Rgb([0,0,0]), palette.clone(), ColorMixture::<MixtureChannel100>::from_f64(vec![1., 0., 0., 0.]));
+        run_pixel_test(Rgb([255,0,0]), palette.clone(), ColorMixture::<MixtureChannel100>::from_f64(vec![0., 1., 0., 0.]));
+        run_pixel_test(Rgb([0,255,0]), palette.clone(), ColorMixture::<MixtureChannel100>::from_f64(vec![0., 0., 1., 0.]));
+        run_pixel_test(Rgb([122,122,122]), palette.clone(), ColorMixture::<MixtureChannel100>::from_f64(vec![0., 0., 0., 1.]));
     }
 }
