@@ -20,8 +20,8 @@
                 }
             },
             "args": ["--image", "/home/alec/projects/art/pointillist_mural_maker/resources/bee.png",
-            // A palette of yellow, black, beige, and green
-        "--palette", "#ffe600,#000000,#f5f5dc,#006400",
+            // A palette of beige, yellow, black, and green
+        "--palette", "#f5f5dc,#ffe600,#000000,#006400",
         "--output", "/home/alec/projects/art/pointillist_mural_maker/output/bee.png"
         ],
 

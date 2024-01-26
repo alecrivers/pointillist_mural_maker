@@ -3,7 +3,23 @@ use image::Rgb;
 use anyhow::{ensure, Result};
 use crate::circular_ops::*;
 
-fn hex_to_rgb(hex: &str) -> Result<Rgb<u8>> {
+pub fn color_to_f64(color: &Rgb<u8>) -> [f64; 3] {
+    [
+        color[0] as f64 / 255.0,
+        color[1] as f64 / 255.0,
+        color[2] as f64 / 255.0,
+    ]
+}
+
+pub fn f64_to_color(color: &[f64; 3]) -> Rgb<u8> {
+    Rgb([
+        (color[0] * 255.0) as u8,
+        (color[1] * 255.0) as u8,
+        (color[2] * 255.0) as u8,
+    ])
+}
+
+pub fn hex_to_rgb(hex: &str) -> Result<Rgb<u8>> {
     ensure!(hex.len() == 7, "Hex color must be 7 characters long, including the leading #");
     let r = u8::from_str_radix(&hex[1..3], 16)?;
     let g = u8::from_str_radix(&hex[3..5], 16)?;
@@ -12,11 +28,11 @@ fn hex_to_rgb(hex: &str) -> Result<Rgb<u8>> {
     Ok(Rgb([r, g, b]))
 }
 
-fn rgb_to_hex(color: &Rgb<u8>) -> String {
+pub fn rgb_to_hex(color: &Rgb<u8>) -> String {
     format!("#{:02X}{:02X}{:02X}", color[0], color[1], color[2])
 }
 
-fn rgb_to_hsl(color: [f64; 3]) -> (f64, f64, f64) {
+fn rgb_to_hsl(color: &[f64; 3]) -> (f64, f64, f64) {
     // Create an Srgb color from the f64 values
     let rgb_color = Srgb::from_components((color[0] as f32, color[1] as f32, color[2] as f32));
 
